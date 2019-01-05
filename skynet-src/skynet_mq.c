@@ -189,6 +189,7 @@ expand_queue(struct message_queue *q) {
 void 
 skynet_mq_push(struct message_queue *q, struct skynet_message *message) {
 	assert(message);
+	//通过死循环锁住该段逻辑
 	SPIN_LOCK(q)
 
 	q->queue[q->tail] = *message;

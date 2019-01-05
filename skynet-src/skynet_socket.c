@@ -31,6 +31,7 @@ skynet_socket_free() {
 	SOCKET_SERVER = NULL;
 }
 
+//更新ss结构里面的时间
 void
 skynet_socket_updatetime() {
 	socket_server_updatetime(SOCKET_SERVER, skynet_now());
@@ -69,6 +70,7 @@ forward_message(int type, bool padding, struct socket_message * result) {
 	message.data = sm;
 	message.sz = sz | ((size_t)PTYPE_SOCKET << MESSAGE_TYPE_SHIFT);
 	
+	//采用消息队列的方式压入消息
 	if (skynet_context_push((uint32_t)result->opaque, &message)) {
 		// todo: report somewhere to close socket
 		// don't call skynet_socket_close here (It will block mainloop)
@@ -77,6 +79,7 @@ forward_message(int type, bool padding, struct socket_message * result) {
 	}
 }
 
+//socket逻辑处理
 int 
 skynet_socket_poll() {
 	struct socket_server *ss = SOCKET_SERVER;
@@ -84,6 +87,7 @@ skynet_socket_poll() {
 	struct socket_message result;
 	int more = 1;
 	int type = socket_server_poll(ss, &result, &more);
+
 	switch (type) {
 	case SOCKET_EXIT:
 		return 0;

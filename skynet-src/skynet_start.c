@@ -52,6 +52,7 @@ create_thread(pthread_t *thread, void *(*start_routine) (void *), void *arg) {
 	}
 }
 
+//
 static void
 wakeup(struct monitor *m, int busy) {
 	if (m->sleep >= m->count - busy) {
@@ -60,18 +61,22 @@ wakeup(struct monitor *m, int busy) {
 	}
 }
 
+//socket线程
 static void *
 thread_socket(void *p) {
 	struct monitor * m = p;
 	skynet_initthread(THREAD_SOCKET);
+
 	for (;;) {
 		int r = skynet_socket_poll();
 		if (r==0)
 			break;
 		if (r<0) {
+			//如果还有任务就继续执行,more字段
 			CHECK_ABORT
 			continue;
 		}
+		//socket任务执行完成后唤醒worker线程来处理队列的消息
 		wakeup(m,0);
 	}
 	return NULL;
@@ -90,17 +95,21 @@ free_monitor(struct monitor *m) {
 	skynet_free(m);
 }
 
+//线程监视器
 static void *
 thread_monitor(void *p) {
 	struct monitor * m = p;
 	int i;
 	int n = m->count;
 	skynet_initthread(THREAD_MONITOR);
+
 	for (;;) {
 		CHECK_ABORT
+		//遍历每一个线程
 		for (i=0;i<n;i++) {
 			skynet_monitor_check(m->m[i]);
 		}
+		//每隔5秒一次
 		for (i=0;i<5;i++) {
 			CHECK_ABORT
 			sleep(1);
@@ -129,11 +138,15 @@ static void *
 thread_timer(void *p) {
 	struct monitor * m = p;
 	skynet_initthread(THREAD_TIMER);
+
 	for (;;) {
+		//更新当前时间
 		skynet_updatetime();
+		//更新ss里面的时间
 		skynet_socket_updatetime();
 		CHECK_ABORT
 		wakeup(m,m->count-1);
+		//2.5毫秒更新一次
 		usleep(2500);
 		if (SIG) {
 			signal_hup();
@@ -142,7 +155,7 @@ thread_timer(void *p) {
 	}
 	// wakeup socket thread
 	skynet_socket_exit();
-	// wakeup all worker thread
+	// cond必须配合mutex使用，使用广播唤醒所有
 	pthread_mutex_lock(&m->mutex);
 	m->quit = 1;
 	pthread_cond_broadcast(&m->cond);
@@ -150,6 +163,7 @@ thread_timer(void *p) {
 	return NULL;
 }
 
+//worker线程处理消息队列
 static void *
 thread_worker(void *p) {
 	struct worker_parm *wp = p;
@@ -158,14 +172,20 @@ thread_worker(void *p) {
 	struct monitor *m = wp->m;
 	struct skynet_monitor *sm = m->m[id];
 	skynet_initthread(THREAD_WORKER);
+
+	//消息队列
 	struct message_queue * q = NULL;
+
 	while (!m->quit) {
+		//这里处理消息
 		q = skynet_context_message_dispatch(sm, q, weight);
 		if (q == NULL) {
+			//没有消息的时候就睡觉
 			if (pthread_mutex_lock(&m->mutex) == 0) {
 				++ m->sleep;
 				// "spurious wakeup" is harmless,
 				// because skynet_context_message_dispatch() can be call at any time.
+				//等待唤醒
 				if (!m->quit)
 					pthread_cond_wait(&m->cond, &m->mutex);
 				-- m->sleep;
@@ -179,6 +199,7 @@ thread_worker(void *p) {
 	return NULL;
 }
 
+//start传入线程数量
 static void
 start(int thread) {
 	pthread_t pid[thread+3];
@@ -189,19 +210,26 @@ start(int thread) {
 	m->sleep = 0;
 
 	m->m = skynet_malloc(thread * sizeof(struct skynet_monitor *));
+
 	int i;
+
+	//每个线程一个监视器
 	for (i=0;i<thread;i++) {
 		m->m[i] = skynet_monitor_new();
 	}
+
+	//初始化线程共用的mutex和cond
 	if (pthread_mutex_init(&m->mutex, NULL)) {
 		fprintf(stderr, "Init mutex error");
 		exit(1);
 	}
+
 	if (pthread_cond_init(&m->cond, NULL)) {
 		fprintf(stderr, "Init cond error");
 		exit(1);
 	}
-
+	
+	//创建3个线程
 	create_thread(&pid[0], thread_monitor, m);
 	create_thread(&pid[1], thread_timer, m);
 	create_thread(&pid[2], thread_socket, m);
@@ -211,18 +239,23 @@ start(int thread) {
 		1, 1, 1, 1, 1, 1, 1, 1, 
 		2, 2, 2, 2, 2, 2, 2, 2, 
 		3, 3, 3, 3, 3, 3, 3, 3, };
+
 	struct worker_parm wp[thread];
+
 	for (i=0;i<thread;i++) {
 		wp[i].m = m;
 		wp[i].id = i;
+
 		if (i < sizeof(weight)/sizeof(weight[0])) {
 			wp[i].weight= weight[i];
 		} else {
 			wp[i].weight = 0;
 		}
+
 		create_thread(&pid[i+3], thread_worker, &wp[i]);
 	}
 
+	//等待所有的线程
 	for (i=0;i<thread+3;i++) {
 		pthread_join(pid[i], NULL); 
 	}

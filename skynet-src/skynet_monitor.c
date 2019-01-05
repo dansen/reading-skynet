@@ -34,6 +34,7 @@ skynet_monitor_trigger(struct skynet_monitor *sm, uint32_t source, uint32_t dest
 	ATOM_INC(&sm->version);
 }
 
+//主要是检查死循环
 void 
 skynet_monitor_check(struct skynet_monitor *sm) {
 	if (sm->version == sm->check_version) {

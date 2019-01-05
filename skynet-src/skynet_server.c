@@ -69,6 +69,7 @@ struct skynet_node {
 	bool profile;	// default is off
 };
 
+//全局node
 static struct skynet_node G_NODE;
 
 int 
@@ -232,6 +233,7 @@ skynet_context_push(uint32_t handle, struct skynet_message *message) {
 	if (ctx == NULL) {
 		return -1;
 	}
+	//插入消息
 	skynet_mq_push(ctx->queue, message);
 	skynet_context_release(ctx);
 
