@@ -124,6 +124,7 @@ skynet_mq_length(struct message_queue *q) {
 	return tail + cap - head;
 }
 
+//执行后就清空了
 int
 skynet_mq_overload(struct message_queue *q) {
 	if (q->overload) {
@@ -134,6 +135,7 @@ skynet_mq_overload(struct message_queue *q) {
 	return 0;
 }
 
+//
 int
 skynet_mq_pop(struct message_queue *q, struct skynet_message *message) {
 	int ret = 1;
@@ -171,6 +173,7 @@ skynet_mq_pop(struct message_queue *q, struct skynet_message *message) {
 	return ret;
 }
 
+//扩张
 static void
 expand_queue(struct message_queue *q) {
 	struct skynet_message *new_queue = skynet_malloc(sizeof(struct skynet_message) * q->cap * 2);
