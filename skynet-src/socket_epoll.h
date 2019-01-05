@@ -41,6 +41,7 @@ sp_del(int efd, int sock) {
 	epoll_ctl(efd, EPOLL_CTL_DEL, sock , NULL);
 }
 
+//ud是用户数据
 static void 
 sp_write(int efd, int sock, void *ud, bool enable) {
 	struct epoll_event ev;

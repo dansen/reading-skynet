@@ -13,6 +13,8 @@
 
 static struct socket_server * SOCKET_SERVER = NULL;
 
+//全局创建一个SOCKET_SERVER
+//初始化了65536个socket
 void 
 skynet_socket_init() {
 	SOCKET_SERVER = socket_server_create(skynet_now());
@@ -116,6 +118,7 @@ skynet_socket_poll() {
 	return 1;
 }
 
+//发送消息，id为socket的id
 int
 skynet_socket_send(struct skynet_context *ctx, int id, void *buffer, int sz) {
 	return socket_server_send(SOCKET_SERVER, id, buffer, sz);

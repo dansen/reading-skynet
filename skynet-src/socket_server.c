@@ -22,6 +22,7 @@
 #define MAX_SOCKET_P 16
 #define MAX_EVENT 64
 #define MIN_READ_BUFFER 64
+
 #define SOCKET_TYPE_INVALID 0
 #define SOCKET_TYPE_RESERVE 1
 #define SOCKET_TYPE_PLISTEN 2
@@ -32,14 +33,18 @@
 #define SOCKET_TYPE_PACCEPT 7
 #define SOCKET_TYPE_BIND 8
 
+//2的16次方
 #define MAX_SOCKET (1<<MAX_SOCKET_P)
 
 #define PRIORITY_HIGH 0
 #define PRIORITY_LOW 1
 
 #define HASH_ID(id) (((unsigned)id) % MAX_SOCKET)
+
+//
 #define ID_TAG16(id) ((id>>MAX_SOCKET_P) & 0xffff)
 
+//支持TCP/UDP
 #define PROTOCOL_TCP 0
 #define PROTOCOL_UDP 1
 #define PROTOCOL_UDPv6 2
@@ -107,15 +112,20 @@ struct socket {
 
 struct socket_server {
 	volatile uint64_t time;
+	//读写管道
 	int recvctrl_fd;
 	int sendctrl_fd;
+
 	int checkctrl;
 	poll_fd event_fd;
+
+	//分配的id
 	int alloc_id;
 	int event_n;
 	int event_index;
 	struct socket_object_interface soi;
 	struct event ev[MAX_EVENT];
+	//socket列表
 	struct socket slot[MAX_SOCKET];
 	char buffer[MAX_INFO];
 	uint8_t udpbuffer[MAX_UDP_PACKAGE];
@@ -307,11 +317,17 @@ reserve_id(struct socket_server *ss) {
 	int i;
 	for (i=0;i<MAX_SOCKET;i++) {
 		int id = ATOM_INC(&(ss->alloc_id));
+
+		//超过int值了
 		if (id < 0) {
 			id = ATOM_AND(&(ss->alloc_id), 0x7fffffff);
 		}
+
 		struct socket *s = &ss->slot[HASH_ID(id)];
+
+		//寻找一个未使用的
 		if (s->type == SOCKET_TYPE_INVALID) {
+			//修改值，分配一个id
 			if (ATOM_CAS(&s->type, SOCKET_TYPE_INVALID, SOCKET_TYPE_RESERVE)) {
 				s->id = id;
 				s->protocol = PROTOCOL_UNKNOWN;
@@ -335,20 +351,27 @@ clear_wb_list(struct wb_list *list) {
 	list->tail = NULL;
 }
 
+//time为创建时间
 struct socket_server * 
 socket_server_create(uint64_t time) {
 	int i;
 	int fd[2];
+	//创建一个内核IO事件对象
 	poll_fd efd = sp_create();
+
 	if (sp_invalid(efd)) {
 		fprintf(stderr, "socket-server: create event pool failed.\n");
 		return NULL;
 	}
+
+	//创建管道，0为读，1为写
 	if (pipe(fd)) {
 		sp_release(efd);
 		fprintf(stderr, "socket-server: create socket pair failed.\n");
 		return NULL;
 	}
+
+	//绑定读取通道
 	if (sp_add(efd, fd[0], NULL)) {
 		// add recvctrl_fd to event poll
 		fprintf(stderr, "socket-server: can't add server fd to event pool.\n");
@@ -359,12 +382,17 @@ socket_server_create(uint64_t time) {
 	}
 
 	struct socket_server *ss = MALLOC(sizeof(*ss));
+	//当前时间
 	ss->time = time;
+	//事件对象
 	ss->event_fd = efd;
+	//读写管道
 	ss->recvctrl_fd = fd[0];
 	ss->sendctrl_fd = fd[1];
-	ss->checkctrl = 1;
 
+	ss->checkctrl = 1;
+	
+	//初始化socket
 	for (i=0;i<MAX_SOCKET;i++) {
 		struct socket *s = &ss->slot[i];
 		s->type = SOCKET_TYPE_INVALID;
@@ -372,6 +400,7 @@ socket_server_create(uint64_t time) {
 		clear_wb_list(&s->low);
 		spinlock_init(&s->dw_lock);
 	}
+
 	ss->alloc_id = 0;
 	ss->event_n = 0;
 	ss->event_index = 0;
@@ -929,6 +958,7 @@ _failed:
 	return SOCKET_ERR;
 }
 
+//检查socket的发送区是否为空
 static inline int
 nomore_sending_data(struct socket *s) {
 	return send_buffer_empty(s) && s->dw_buffer == NULL && (s->sending & 0xffff) == 0;
@@ -1101,6 +1131,7 @@ set_udp_address(struct socket_server *ss, struct request_setudp *request, struct
 	return -1;
 }
 
+//防止s->sending数量超过2的16次方
 static inline void
 inc_sending_ref(struct socket *s, int id) {
 	if (s->protocol != PROTOCOL_TCP)
@@ -1133,6 +1164,7 @@ dec_sending_ref(struct socket_server *ss, int id) {
 	}
 }
 
+//
 // return type
 static int
 ctrl_cmd(struct socket_server *ss, struct socket_message *result) {
@@ -1519,11 +1551,14 @@ socket_server_poll(struct socket_server *ss, struct socket_message * result, int
 	}
 }
 
+//type是'D'
 static void
 send_request(struct socket_server *ss, struct request_package *request, char type, int len) {
 	request->header[6] = (uint8_t)type;
 	request->header[7] = (uint8_t)len;
+
 	for (;;) {
+		//写入到管道中
 		ssize_t n = write(ss->sendctrl_fd, &request->header[6], len+2);
 		if (n<0) {
 			if (errno != EINTR) {
@@ -1573,15 +1608,21 @@ can_direct_write(struct socket *s, int id) {
 // return -1 when error, 0 when success
 int 
 socket_server_send(struct socket_server *ss, int id, const void * buffer, int sz) {
+	//获取socket
 	struct socket * s = &ss->slot[HASH_ID(id)];
+	//无效的
 	if (s->id != id || s->type == SOCKET_TYPE_INVALID) {
 		free_buffer(ss, buffer, sz);
 		return -1;
 	}
 
 	struct socket_lock l;
+
+	//初始化锁
 	socket_lock_init(s, &l);
 
+	//是否能够直接发送，只有缓冲区为0才能直接发送
+	//多线程里面必须上锁
 	if (can_direct_write(s,id) && socket_trylock(&l)) {
 		// may be we can send directly, double check
 		if (can_direct_write(s,id)) {
@@ -1589,6 +1630,7 @@ socket_server_send(struct socket_server *ss, int id, const void * buffer, int sz
 			struct send_object so;
 			send_object_init(ss, &so, (void *)buffer, sz);
 			ssize_t n;
+			//tcp协议
 			if (s->protocol == PROTOCOL_TCP) {
 				n = write(s->fd, so.buffer, so.sz);
 			} else {
@@ -1602,22 +1644,28 @@ socket_server_send(struct socket_server *ss, int id, const void * buffer, int sz
 				}
 				n = sendto(s->fd, so.buffer, so.sz, 0, &sa.s, sasz);
 			}
+
+			//n < 0通常是写满了
 			if (n<0) {
 				// ignore error, let socket thread try again
 				n = 0;
 			}
+			//记录写的大小、时间
 			stat_write(ss,s,n);
+
 			if (n == so.sz) {
-				// write done
+				// 写完了，直接返回
 				socket_unlock(&l);
 				so.free_func((void *)buffer);
 				return 0;
 			}
+			//如果还没写完，就将剩余的buffer放到dw_buffer，让socket线程来发送，也收工了
 			// write failed, put buffer into s->dw_* , and let socket thread send it. see send_buffer()
 			s->dw_buffer = buffer;
 			s->dw_size = sz;
 			s->dw_offset = n;
 
+			//发送到epoll中
 			sp_write(ss->event_fd, s->fd, s, true);
 
 			socket_unlock(&l);
@@ -1626,6 +1674,7 @@ socket_server_send(struct socket_server *ss, int id, const void * buffer, int sz
 		socket_unlock(&l);
 	}
 
+	//防止发送的包超过2的16次方
 	inc_sending_ref(s, id);
 
 	struct request_package request;
@@ -1633,6 +1682,7 @@ socket_server_send(struct socket_server *ss, int id, const void * buffer, int sz
 	request.u.send.sz = sz;
 	request.u.send.buffer = (char *)buffer;
 
+	//
 	send_request(ss, &request, 'D', sizeof(request.u.send));
 	return 0;
 }
@@ -1682,6 +1732,7 @@ socket_server_shutdown(struct socket_server *ss, uintptr_t opaque, int id) {
 	send_request(ss, &request, 'K', sizeof(request.u.close));
 }
 
+//常规bind
 // return -1 means failed
 // or return AF_INET or AF_INET6
 static int
@@ -1712,12 +1763,15 @@ do_bind(const char *host, int port, int protocol, int *family) {
 	}
 	*family = ai_list->ai_family;
 	fd = socket(*family, ai_list->ai_socktype, 0);
+
 	if (fd < 0) {
 		goto _failed_fd;
 	}
+
 	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&reuse, sizeof(int))==-1) {
 		goto _failed;
 	}
+
 	status = bind(fd, (struct sockaddr *)ai_list->ai_addr, ai_list->ai_addrlen);
 	if (status != 0)
 		goto _failed;
@@ -1731,6 +1785,7 @@ _failed_fd:
 	return -1;
 }
 
+//常规listen
 static int
 do_listen(const char * host, int port, int backlog) {
 	int family = 0;
@@ -1745,21 +1800,29 @@ do_listen(const char * host, int port, int backlog) {
 	return listen_fd;
 }
 
+//监听端口
 int 
 socket_server_listen(struct socket_server *ss, uintptr_t opaque, const char * addr, int port, int backlog) {
 	int fd = do_listen(addr, port, backlog);
 	if (fd < 0) {
 		return -1;
 	}
+
 	struct request_package request;
+
+	//分配一个socket
 	int id = reserve_id(ss);
+
 	if (id < 0) {
 		close(fd);
 		return id;
 	}
+
+	//绑定id和fd
 	request.u.listen.opaque = opaque;
 	request.u.listen.id = id;
 	request.u.listen.fd = fd;
+
 	send_request(ss, &request, 'L', sizeof(request.u.listen));
 	return id;
 }
