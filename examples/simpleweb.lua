@@ -6,6 +6,7 @@ local urllib = require "http.url"
 local table = table
 local string = string
 
+--...是newservice的参数
 local mode = ...
 
 if mode == "agent" then
@@ -20,9 +21,12 @@ end
 
 skynet.start(function()
 	skynet.dispatch("lua", function (_,_,id)
+		--添加epoll事件监听
 		socket.start(id)
+		--读取数据
 		-- limit request body size to 8192 (you can pass nil to unlimit)
 		local code, url, method, header, body = httpd.read_request(sockethelper.readfunc(id), 8192)
+
 		if code then
 			if code ~= 200 then
 				response(id, code)
@@ -53,6 +57,8 @@ skynet.start(function()
 				skynet.error(url)
 			end
 		end
+
+		--关闭连接
 		socket.close(id)
 	end)
 end)
@@ -65,11 +71,18 @@ skynet.start(function()
 		agent[i] = skynet.newservice(SERVICE_NAME, "agent")
 	end
 	local balance = 1
+
+	--监听，返回一个id，对应于socket池中的一个,bind
 	local id = socket.listen("0.0.0.0", 8001)
 	skynet.error("Listen web port 8001")
-	socket.start(id , function(id, addr)
+
+	--添加epoll事件监听，accept监听
+	socket.start(id , function(client_id, client_addr)
 		skynet.error(string.format("%s connected, pass it to agent :%08x", addr, agent[balance]))
-		skynet.send(agent[balance], "lua", id)
+
+		--发送给agent
+		skynet.send(agent[balance], "lua", client_id)
+
 		balance = balance + 1
 		if balance > #agent then
 			balance = 1

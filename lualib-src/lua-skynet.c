@@ -232,7 +232,9 @@ get_dest_string(lua_State *L, int index) {
 static int
 send_message(lua_State *L, int source, int idx_type) {
 	struct skynet_context * context = lua_touserdata(L, lua_upvalueindex(1));
+
 	uint32_t dest = (uint32_t)lua_tointeger(L, 1);
+
 	const char * dest_string = NULL;
 	if (dest == 0) {
 		if (lua_type(L,1) == LUA_TNUMBER) {
@@ -277,6 +279,8 @@ send_message(lua_State *L, int source, int idx_type) {
 	default:
 		luaL_error(L, "invalid param %s", lua_typename(L, lua_type(L,idx_type+2)));
 	}
+
+	//
 	if (session < 0) {
 		if (session == -2) {
 			// package is too large
@@ -287,6 +291,8 @@ send_message(lua_State *L, int source, int idx_type) {
 		// todo: maybe throw an error would be better
 		return 0;
 	}
+
+	//返回session
 	lua_pushinteger(L,session);
 	return 1;
 }
@@ -302,6 +308,8 @@ send_message(lua_State *L, int source, int idx_type) {
  */
 static int
 lsend(lua_State *L) {
+	//0为source
+	//2位idx_type
 	return send_message(L, 0, 2);
 }
 
@@ -511,15 +519,18 @@ luaopen_skynet_core(lua_State *L) {
 
 	lua_createtable(L, 0, sizeof(l)/sizeof(l[0]) + sizeof(l2)/sizeof(l2[0]) -2);
 
+	//全局skynet
 	lua_getfield(L, LUA_REGISTRYINDEX, "skynet_context");
 	struct skynet_context *ctx = lua_touserdata(L,-1);
+
 	if (ctx == NULL) {
 		return luaL_error(L, "Init skynet context first");
 	}
 
-
+	//注册函数
 	luaL_setfuncs(L,l,1);
 
+	//注册函数
 	luaL_setfuncs(L,l2,0);
 
 	return 1;

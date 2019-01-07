@@ -1011,6 +1011,7 @@ bind_socket(struct socket_server *ss, struct request_bind *request, struct socke
 	return SOCKET_OPEN;
 }
 
+//绑定epoll事件
 static int
 start_socket(struct socket_server *ss, struct request_start *request, struct socket_message *result) {
 	int id = request->id;
@@ -1025,7 +1026,9 @@ start_socket(struct socket_server *ss, struct request_start *request, struct soc
 	}
 	struct socket_lock l;
 	socket_lock_init(s, &l);
+
 	if (s->type == SOCKET_TYPE_PACCEPT || s->type == SOCKET_TYPE_PLISTEN) {
+		//绑定epoll事件
 		if (sp_add(ss->event_fd, s->fd, s)) {
 			force_close(ss, s, &l, result);
 			result->data = strerror(errno);
@@ -1448,6 +1451,7 @@ socket_server_poll(struct socket_server *ss, struct socket_message * result, int
 	for (;;) {
 		if (ss->checkctrl) {
 			if (has_cmd(ss)) {
+				//在这里处理新的mq消息
 				int type = ctrl_cmd(ss, result);
 				if (type != -1) {
 					clear_closed_event(ss, result, type);

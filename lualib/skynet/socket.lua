@@ -29,7 +29,9 @@ end
 
 local function suspend(s)
 	assert(not s.co)
+	--协程对象
 	s.co = coroutine.running()
+
 	skynet.wait(s.co)
 	-- wakeup closing corouting every time suspend,
 	-- because socket.close() will wait last socket buffer operation before clear the buffer.
@@ -179,6 +181,7 @@ local function connect(id, func)
 	}
 	assert(not socket_pool[id], "socket is not closed")
 	socket_pool[id] = s
+	--采用协程等待poll事件
 	suspend(s)
 	local err = s.connecting
 	s.connecting = nil
@@ -204,7 +207,9 @@ function socket.stdin()
 	return socket.bind(0)
 end
 
+--开始连接
 function socket.start(id, func)
+	--driver注册epoll事件
 	driver.start(id)
 	return connect(id, func)
 end
@@ -352,6 +357,7 @@ function socket.disconnected(id)
 	end
 end
 
+--监听端口
 function socket.listen(host, port, backlog)
 	if port == nil then
 		host, port = string.match(host, "([^:]+):(.+)$")

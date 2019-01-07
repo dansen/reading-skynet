@@ -714,6 +714,7 @@ skynet_send(struct skynet_context * context, uint32_t source, uint32_t destinati
 	}
 	_filter_args(context, type, &session, (void **)&data, &sz);
 
+	//source为0，
 	if (source == 0) {
 		source = context->handle;
 	}
@@ -727,7 +728,9 @@ skynet_send(struct skynet_context * context, uint32_t source, uint32_t destinati
 
 		return session;
 	}
+	
 	if (skynet_harbor_message_isremote(destination)) {
+		//发送到远程
 		struct remote_message * rmsg = skynet_malloc(sizeof(*rmsg));
 		rmsg->destination.handle = destination;
 		rmsg->message = data;
@@ -735,12 +738,13 @@ skynet_send(struct skynet_context * context, uint32_t source, uint32_t destinati
 		rmsg->type = sz >> MESSAGE_TYPE_SHIFT;
 		skynet_harbor_send(rmsg, source, session);
 	} else {
+		//发送到本地
 		struct skynet_message smsg;
 		smsg.source = source;
 		smsg.session = session;
 		smsg.data = data;
 		smsg.sz = sz;
-
+		//直接push到本地消息队列
 		if (skynet_context_push(destination, &smsg)) {
 			skynet_free(data);
 			return -1;

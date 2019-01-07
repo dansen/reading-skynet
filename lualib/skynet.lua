@@ -41,6 +41,7 @@ local skynet = {
 -- code cache
 skynet.cache = require "skynet.codecache"
 
+--注册协议
 function skynet.register_protocol(class)
 	local name = class.name
 	local id = class.id
@@ -236,6 +237,7 @@ function skynet.yield()
 	return skynet.sleep(0)
 end
 
+--token就是lua协程对象
 function skynet.wait(token)
 	local session = c.genid()
 	token = token or coroutine.running()
@@ -348,8 +350,11 @@ skynet.tostring = assert(c.tostring)
 skynet.trash = assert(c.trash)
 
 local function yield_call(service, session)
+	--观察者
 	watching_session[session] = service
+	--绑定线程信息
 	session_id_coroutine[session] = running_thread
+
 	local succ, msg, sz = coroutine_yield "SUSPEND"
 	watching_session[session] = nil
 	if not succ then
@@ -358,14 +363,18 @@ local function yield_call(service, session)
 	return msg,sz
 end
 
+--skynet.call(slave, "lua")
 function skynet.call(addr, typename, ...)
+	--打印日志
 	local tag = session_coroutine_tracetag[running_thread]
 	if tag then
 		c.trace(tag, "call", 2)
 		c.send(addr, skynet.PTYPE_TRACE, 0, tag)
 	end
-
+	
 	local p = proto[typename]
+
+	--发送一个消息
 	local session = c.send(addr, p.id , nil , p.pack(...))
 	if session == nil then
 		error("call to invalid address " .. skynet.address(addr))
