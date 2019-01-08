@@ -102,7 +102,7 @@ local function _error_dispatch(error_session, error_source)
 end
 
 -- coroutine reuse
-
+-- 防止协程太多，使用了协程池
 local coroutine_pool = setmetatable({}, { __mode = "kv" })
 
 local function co_create(f)
@@ -527,7 +527,9 @@ function skynet.dispatch_unknown_response(unknown)
 end
 
 function skynet.fork(func,...)
+	--select关键字
 	local n = select("#", ...)
+	--创建一个协程
 	local co
 	if n == 0 then
 		co = co_create(func)
@@ -603,14 +605,18 @@ local function raw_dispatch_message(prototype, msg, sz, session, source)
 	end
 end
 
+--lua层的消息分发
 function skynet.dispatch_message(...)
 	local succ, err = pcall(raw_dispatch_message,...)
+
 	while true do
+		--执行fork操作
 		local key,co = next(fork_queue)
 		if co == nil then
 			break
 		end
 		fork_queue[key] = nil
+		--执行协程逻辑
 		local fork_succ, fork_err = pcall(suspend,co,coroutine_resume(co))
 		if not fork_succ then
 			if succ then
@@ -732,19 +738,25 @@ function skynet.pcall(start, ...)
 	return xpcall(init_template, debug.traceback, start, ...)
 end
 
+--初始化
 function skynet.init_service(start)
+	--执行入口函数
 	local ok, err = skynet.pcall(start)
 	if not ok then
 		skynet.error("init service failed: " .. tostring(err))
 		skynet.send(".launcher","lua", "ERROR")
 		skynet.exit()
 	else
+		--发送一条消息，这条消息会驱动fork
 		skynet.send(".launcher","lua", "LAUNCHOK")
 	end
 end
 
+--skynet的lua入口函数
 function skynet.start(start_func)
+	--设置回调函数
 	c.callback(skynet.dispatch_message)
+	--定时执行
 	init_thread = skynet.timeout(0, function()
 		skynet.init_service(start_func)
 		init_thread = nil

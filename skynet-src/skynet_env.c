@@ -48,5 +48,6 @@ void
 skynet_env_init() {
 	E = skynet_malloc(sizeof(*E));
 	SPIN_INIT(E)
+	//单独一个虚拟机
 	E->L = luaL_newstate();
 }

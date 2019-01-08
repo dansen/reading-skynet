@@ -309,6 +309,7 @@ skynet_start(struct skynet_config * config) {
 
 	bootstrap(ctx, config->bootstrap);
 
+	//开始线程服务
 	start(config->thread);
 
 	// harbor_exit may call socket send, so it should exit before socket_free

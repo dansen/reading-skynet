@@ -118,6 +118,7 @@ static const char * load_config = "\
 int
 main(int argc, char *argv[]) {
 	const char * config_file = NULL ;
+	//输入一个配置文件
 	if (argc > 1) {
 		config_file = argv[1];
 	} else {
@@ -134,6 +135,7 @@ main(int argc, char *argv[]) {
 
 	struct skynet_config config;
 
+	//skynet全局一个lua虚拟机对象
 	struct lua_State *L = luaL_newstate();
 	luaL_openlibs(L);	// link lua lib
 

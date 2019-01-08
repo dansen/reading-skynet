@@ -320,6 +320,7 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 
 	//
 	for (i=0;i<n;i++) {
+		//取出一条消息
 		if (skynet_mq_pop(q,&msg)) {
 			skynet_context_release(ctx);
 			return skynet_globalmq_pop();
