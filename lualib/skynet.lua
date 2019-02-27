@@ -106,11 +106,15 @@ end
 local coroutine_pool = setmetatable({}, { __mode = "kv" })
 
 local function co_create(f)
+	--从池子里拿一个协程
 	local co = table.remove(coroutine_pool)
 	if co == nil then
+		--如果没有协程了，则创建一个
 		co = coroutine_create(function(...)
+			--调用函数
 			f(...)
 			while true do
+				--session相关的数据处理
 				local session = session_coroutine_id[co]
 				if session and session ~= 0 then
 					local source = debug.getinfo(f,"S")
@@ -131,7 +135,7 @@ local function co_create(f)
 					session_coroutine_address[co] = nil
 				end
 
-				-- recycle co into pool
+				--回收到池子
 				f = nil
 				coroutine_pool[#coroutine_pool+1] = co
 				-- recv new main function f
